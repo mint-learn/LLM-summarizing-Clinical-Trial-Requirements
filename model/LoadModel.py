@@ -1,26 +1,27 @@
-from openai import OpenAI
+import openai
+from openai import AsyncOpenAI
 import os
 import time
 import pandas as pd
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-# set API key
-key = os.getenv('OPENAI_API_KEY')
-client = OpenAI(api_key=key)
+# set API key and initialize Async client
+client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
-# load model
-# GPT-3: "gpt-3.5-turbo"; davinci："text-davinci-003"
+
+# Define async GPT-3 model class
 class GPT3Model:
-    def __init__(self, api_key):
-        OpenAI.api_key = key
+    def __init__(self, client):
+        self.client = client
 
-    def generate_summary(self, description, max_tokens=150, temperature=0.7):
-        retries = 3  # max request
+    async def generate_summary(self, description, max_tokens=150, temperature=0.7):
+        retries = 5  # max request
         for i in range(retries):
+            start_time = time.time()  # 开始计时
             try:
                 print(f"Attempt {i + 1}: Generating summary for description...")
-                response = client.chat.completions.create(
+                response = await self.client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system",
@@ -31,15 +32,17 @@ class GPT3Model:
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
+                end_time = time.time()  # 结束计时
+                elapsed_time = end_time - start_time  # 计算总耗时
                 # summary
-                print(f"Summary successfully generated on attempt {i + 1}")
+                print(f"Summary successfully generated on attempt {i + 1} (Time taken: {elapsed_time:.2f} seconds)")
                 return response.choices[0].message.content.strip()
 
-            except OpenAI.error.RateLimitError:
+            except client.error.RateLimitError:
                 # request rate
                 wait_time = 2 ** i  # time wait
                 print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
+                await asyncio.sleep(wait_time)
 
             except Exception as e:
                 print(f"An error occurred on attempt {i + 1}: {e}")
@@ -49,9 +52,10 @@ class GPT3Model:
         return None
 
 
-if __name__ == "__main__":
+# Main async function
+async def main():
     # load model
-    gpt3 = GPT3Model(api_key=key)
+    gpt3 = GPT3Model(client)
 
     # load data file
     df = pd.read_csv('../ClinicTrialsData/chosen_data.csv', encoding='ISO-8859-1')
@@ -65,7 +69,7 @@ if __name__ == "__main__":
         description = row['A short description of the trial']
 
         try:
-            summary = gpt3.generate_summary(description)
+            summary = await gpt3.generate_summary(description)
 
             # save
             data_to_save.append({
@@ -76,6 +80,7 @@ if __name__ == "__main__":
             })
 
         except Exception as e:
+            # 捕捉并报告错误，但继续处理下一条数据
             print(f"An error occurred while processing trial {trial_id}: {e}")
             continue
 
@@ -86,3 +91,9 @@ if __name__ == "__main__":
         print("Data successfully saved to summary_data.csv.")
     except Exception as e:
         print(f"An error occurred while saving the DataFrame: {e}")
+
+
+# Entry point for the async execution
+if __name__ == "__main__":
+    asyncio.run(main())
+
