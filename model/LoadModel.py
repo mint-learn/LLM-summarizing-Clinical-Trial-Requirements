@@ -1,13 +1,13 @@
 from openai import OpenAI
 import os
 import time
+import pandas as pd
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 # set API key
 key = os.getenv('OPENAI_API_KEY')
 client = OpenAI(api_key=key)
-import pandas as pd
-
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
 # load model
 # GPT-3: "gpt-3.5-turbo"; davinci："text-davinci-003"
@@ -16,7 +16,7 @@ class GPT3Model:
         OpenAI.api_key = key
 
     def generate_summary(self, description, max_tokens=150, temperature=0.7):
-        retries = 5  # max request
+        retries = 3  # max request
         for i in range(retries):
             try:
                 print(f"Attempt {i + 1}: Generating summary for description...")
@@ -49,32 +49,40 @@ class GPT3Model:
         return None
 
 
-
 if __name__ == "__main__":
-  # load model
-  gpt3 = GPT3Model(api_key=key)
+    # load model
+    gpt3 = GPT3Model(api_key=key)
 
-  # load data file
-  df = pd.read_csv('../ClinicTrialsData/chosen_data.csv', encoding='ISO-8859-1')
+    # load data file
+    df = pd.read_csv('../ClinicTrialsData/chosen_data.csv', encoding='ISO-8859-1')
 
-  data_to_save = []
+    data_to_save = []
 
-  # summary
-  for index, row in df.iterrows():
-    trial_name = row['Trial Name']
-    trial_id = row['Trial ID']
-    description = row['A short description of the trial']
+    # summary
+    for index, row in df.iterrows():
+        trial_name = row['Trial Name']
+        trial_id = row['Trial ID']
+        description = row['A short description of the trial']
 
-    summary = gpt3.generate_summary(description)
+        try:
+            summary = gpt3.generate_summary(description)
 
-    # save
-    data_to_save.append({
-      'Trial Name': trial_name,
-      'Trial ID': trial_id,
-      'A short description of the trial': description,
-      'Generated Summary': summary
-    })
+            # save
+            data_to_save.append({
+                'Trial Name': trial_name,
+                'Trial ID': trial_id,
+                'A short description of the trial': description,
+                'Generated Summary': summary
+            })
 
-  df_summary = pd.DataFrame(data_to_save)
-  df_summary.to_csv('../ClinicTrialsData/summary_data.csv', index=False, encoding='utf-8')
+        except Exception as e:
+            print(f"An error occurred while processing trial {trial_id}: {e}")
+            continue
 
+    # Convert to DataFrame and attempt to save the data
+    try:
+        df_summary = pd.DataFrame(data_to_save)
+        df_summary.to_csv('../ClinicTrialsData/summary_data.csv', index=False, encoding='utf-8')
+        print("Data successfully saved to summary_data.csv.")
+    except Exception as e:
+        print(f"An error occurred while saving the DataFrame: {e}")
